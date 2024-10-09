@@ -1,0 +1,32 @@
+  provider:
+    labels:
+      - name: city
+        value: Karlsruhe
+  labels:
+    - name: purpose
+      value: test
+
+  resources:
+    - name: google
+      type: blob
+      input:
+        type: wget
+        url: https://google.de
+    - name: text
+      type: PlainText
+      input:
+        type: file
+        path: testdata
+    - name: data
+      type: PlainText
+      relation: external
+      version: 0.4.0
+      input:
+        type: binary
+        data: IXN0cmluZ2RhdGE=
+    - name: directory
+      type: directoryTree
+      input:
+        type: dir
+        compress: true
+        path: testdir

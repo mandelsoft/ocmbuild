@@ -1,0 +1,26 @@
+
+schemaVersion: v1
+metadata:
+  some: metadata
+
+version: 0.1.0
+provider:
+  name: mandelsoft.org
+
+components:
+  - name: ocm.software/buildplugins/goexecutable
+    builds:
+#      - executable: goplugin
+      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+        config:
+          paths:
+            - cmds/test/build/plugins/gobuild
+          resource:
+           name: goexecutable
+           type: ocm.software/buildplugin
+          platforms:
+            - linux/amd64
+            - darwin/arm64
+#      - executable: testplugin
+#        config:
+#          constructor: test/constructor
