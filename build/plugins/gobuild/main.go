@@ -34,7 +34,7 @@ func main() {
 }
 
 type Config struct {
-	Paths   []string `json:"paths"`
+	Path    string   `json:"path"`
 	Options []string `json:"options,omitempty"`
 
 	Platforms []string `json:"platforms,omitempty""`
@@ -42,8 +42,10 @@ type Config struct {
 }
 
 type Resource struct {
-	Name string `json:"name"`
-	Type string `json:"type,omitempty"`
+	Name          string          `json:"name"`
+	Type          string          `json:"type,omitempty"`
+	ExtraIdentity metav1.Identity `json:"extraIdentity,omitempty"`
+	Labels        metav1.Labels   `json:"labels,omitempty"`
 }
 
 type Handler struct{}
@@ -53,8 +55,8 @@ var _ ppi.Handler[Config] = (*Handler)(nil)
 func (h *Handler) Run(p *ppi.Plugin[Config], pstate *state.Descriptor, c *comp.ResourceSpec) error {
 	config := p.Config()
 
-	if len(config.Paths) == 0 {
-		return fmt.Errorf("at least one path to build required")
+	if config.Path == "" {
+		return fmt.Errorf("file path to build required")
 	}
 	if config.Resource.Name == "" {
 		return fmt.Errorf("resource name required")
@@ -107,17 +109,17 @@ func build(p *ppi.Plugin[Config], cfg *Config, platform string) (string, metav1.
 		return "", nil, err
 	}
 	args := append([]string{"build", "-o", target}, cfg.Options...)
-	for _, p := range cfg.Paths {
-		if ok, err := vfs.Exists(osfs.OsFs, p); !ok || err != nil {
-			return "", nil, fmt.Errorf("path %q not found", p)
-		}
-		if !vfs.IsAbs(osfs.OsFs, p) {
-			p = "." + string(os.PathSeparator) + p
-		}
-		args = append(args, p)
+	path := cfg.Path
+	if ok, err := vfs.Exists(osfs.OsFs, path); !ok || err != nil {
+		return "", nil, fmt.Errorf("path %q not found", path)
 	}
+	if !vfs.IsAbs(osfs.OsFs, path) {
+		path = "." + string(os.PathSeparator) + path
+	}
+	args = append(args, path)
 	cmd := exec.Command("go", args...)
 	cmd.Env = env
+	cmd.Stderr = os.Stderr
 
 	info = append(info, "go")
 
@@ -158,6 +160,11 @@ func stream(wg *sync.WaitGroup, in io.ReadCloser, out io.Writer) {
 }
 
 func apply(p *ppi.Plugin[Config], cfg *Config, c *comp.ResourceSpec, target string, id metav1.Identity) error {
+	extra := id.Copy()
+	for k, v := range cfg.Resource.ExtraIdentity {
+		extra[k] = v
+	}
+
 	inp, err := inputs.ToGenericInputSpec(&file.Spec{
 		MediaFileSpec: cpi.MediaFileSpec{
 			PathSpec: cpi.PathSpec{
@@ -180,8 +187,8 @@ func apply(p *ppi.Plugin[Config], cfg *Config, c *comp.ResourceSpec, target stri
 	res := &rscs.ResourceSpec{
 		ElementMeta: v2.ElementMeta{
 			Name:          cfg.Resource.Name,
-			ExtraIdentity: id,
-			Labels:        nil,
+			ExtraIdentity: extra,
+			Labels:        cfg.Resource.Labels,
 		},
 		Type:     utils.OptionalDefaulted(resourcetypes.EXECUTABLE, cfg.Resource.Type),
 		Relation: metav1.LocalRelation,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"runtime"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/cyberphone/json-canonicalization/go/src/webpki.org/jsoncanonicalizer"
 	"github.com/mandelsoft/filepath/pkg/filepath"
 	"github.com/mandelsoft/goutils/errors"
+	"github.com/mandelsoft/goutils/general"
 	"github.com/mandelsoft/vfs/pkg/osfs"
 	"github.com/mandelsoft/vfs/pkg/vfs"
 	"ocm.software/ocm/api/ocm"
@@ -34,14 +36,31 @@ func init() {
 }
 
 type PluginCache struct {
-	ctx     ocm.Context
-	path    string
-	printer common.Printer
+	ctx       ocm.Context
+	path      string
+	printer   common.Printer
+	reresolve bool
+
+	discovered []buildfile.Plugin
+	plugins    []Entry
+}
+
+type Entry struct {
+	Info
+	path string
+}
+
+type Info struct {
+	Id     HashId           `json:"id"`
+	Spec   buildfile.Plugin `json:"spec"`
+	Digest string           `json:"digest"`
 }
 
 type Plugin struct {
 	path string
 	desc string
+
+	info Info
 }
 
 func (p *Plugin) Path() string {
@@ -52,32 +71,66 @@ func (p *Plugin) String() string {
 	return fmt.Sprintf("%s[%s]", p.desc, vfs.Base(osfs.OsFs, p.path))
 }
 
-func New(ctx ocm.Context, path string, printer common.Printer) (*PluginCache, error) {
+func New(ctx ocm.Context, path string, printer common.Printer, cached ...bool) (*PluginCache, error) {
 	err := os.MkdirAll(path, 0o750)
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot create build plugin dir")
 	}
+
+	var plugins []Entry
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".info") {
+			var info Info
+			pp := vfs.Join(osfs.OsFs, path, strings.TrimSuffix(e.Name(), ".info"))
+			d, err := os.ReadFile(vfs.Join(osfs.OsFs, path, e.Name()))
+			if err != nil {
+				return nil, errors.Wrapf(err, "cannot read plugin info")
+			}
+			err = json.Unmarshal(d, &info)
+			if err == nil {
+				if ok, err := vfs.FileExists(osfs.OsFs, pp); ok && err == nil {
+					plugins = append(plugins, Entry{info, pp})
+				} else {
+					os.Remove(e.Name())
+					printer.Printf("WARNING: no ülgin found for %s in filesystem", e.Name(), err)
+				}
+			} else {
+				printer.Printf("WARNING: cannot unmarshal plugin info for %s", e.Name(), err)
+			}
+		}
+	}
 	return &PluginCache{
-		ctx:     ctx,
-		path:    path,
-		printer: printer,
+		ctx:       ctx,
+		path:      path,
+		printer:   printer,
+		plugins:   plugins,
+		reresolve: !general.Optional(cached...),
 	}, nil
 }
 
-type hashId struct {
+type HashId struct {
 	Component string
 	Version   string
 	Resource  string
 }
 
-func (i *hashId) String() string {
+func (i *HashId) IsComplete() bool {
+	return i.Component != "" && i.Version != "" && i.Resource != ""
+}
+
+func (i *HashId) String() string {
 	if i.Resource == "" {
 		return fmt.Sprintf("%s:%s", i.Component, i.Version)
 	}
 	return fmt.Sprintf("%s:%s[%s]", i.Component, i.Version, i.Resource)
 }
 
-func Hash(id *hashId) string {
+func Hash(id *HashId) string {
 	data, err := json.Marshal(id)
 	if err != nil {
 		panic(err)
@@ -91,29 +144,42 @@ func Hash(id *hashId) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (o *PluginCache) getPath(hid *hashId) string {
+func (o *PluginCache) getPath(hid *HashId) string {
 	return filepath.Join(o.path, Hash(hid))
 }
 
-func (o *PluginCache) Get(id *buildfile.Plugin, dir string) (*Plugin, error) {
-	if id.Executable != "" {
-		if id.PluginRef != "" {
+func (o *PluginCache) add(info *Info, path string) *Plugin {
+	o.discovered = append(o.discovered, info.Spec)
+	o.plugins = append(o.plugins, Entry{
+		Info: *info,
+		path: path,
+	})
+	return &Plugin{
+		path: path,
+		desc: info.Id.String(),
+		info: *info,
+	}
+}
+
+func (o *PluginCache) Get(pspec *buildfile.Plugin, dir string) (*Plugin, error) {
+	if pspec.Executable != "" {
+		if pspec.PluginRef != "" {
 			return nil, fmt.Errorf("for an execuable no reference required")
 		}
-		if id.Repository != nil {
+		if pspec.Repository != nil {
 			return nil, fmt.Errorf("for an execuable no repository required")
 		}
-		if id.Component != "" {
+		if pspec.Component != "" {
 			return nil, fmt.Errorf("for an execuable no component required")
 		}
-		if id.Version != "" {
+		if pspec.Version != "" {
 			return nil, fmt.Errorf("for an execuable no version required")
 		}
-		if id.Resource != "" {
+		if pspec.Resource != "" {
 			return nil, fmt.Errorf("for an execuable no resource required")
 		}
-		path := id.Executable
-		if !vfs.IsAbs(osfs.OsFs, id.Executable) {
+		path := pspec.Executable
+		if !vfs.IsAbs(osfs.OsFs, pspec.Executable) {
 			path = vfs.Join(osfs.OsFs, dir, path)
 		}
 		return &Plugin{
@@ -122,37 +188,74 @@ func (o *PluginCache) Get(id *buildfile.Plugin, dir string) (*Plugin, error) {
 		}, nil
 	}
 
-	if id.Repository == nil && id.PluginRef == "" {
+	if pspec.Repository == nil && pspec.PluginRef == "" {
 		return nil, fmt.Errorf("repository, reference or executable required")
 	}
-	if id.Repository != nil && id.PluginRef != "" {
+	if pspec.Repository != nil && pspec.PluginRef != "" {
 		return nil, fmt.Errorf("either repository, reference or executable required")
 	}
 
 	var repospec ocm.RepositorySpec
 
-	hid := &hashId{
-		Component: id.Component,
-		Version:   id.Version,
-		Resource:  id.Resource,
+	// in reresolve mode always reresolve the first occurrence of a ref, instead of resing
+	// cached entry.
+	discovered := !o.reresolve
+	if !discovered {
+		for _, s := range o.discovered {
+			if reflect.DeepEqual(&s, pspec) {
+				discovered = true
+				break
+			}
+		}
 	}
 
-	if id.PluginRef != "" {
-		if id.Component != "" || id.Version != "" {
+	// if assumed to be resolved, lookup cache entry
+	if discovered {
+		for _, pi := range o.plugins {
+			if reflect.DeepEqual(&pi.Spec, pspec) {
+				// o.printer.Printf("using cached plugin\n")
+				return &Plugin{
+					path: pi.path,
+					desc: pi.Info.Id.String(),
+				}, nil
+			}
+		}
+	} else {
+		for i, pi := range o.plugins {
+			// forget cached resolution for yet undiscovered entry
+			if reflect.DeepEqual(&pi.Spec, pspec) {
+				// reevaluate ref
+				o.plugins = append(o.plugins[:i], o.plugins[i+1:]...)
+				break
+			}
+		}
+	}
+
+	info := Info{
+		Spec: *pspec,
+		Id: HashId{
+			Component: pspec.Component,
+			Version:   pspec.Version,
+			Resource:  pspec.Resource,
+		},
+	}
+
+	if pspec.PluginRef != "" {
+		if pspec.Component != "" || pspec.Version != "" {
 			return nil, fmt.Errorf("component or version not required for reference")
 		}
 
-		spec, err := ocm.ParseRef(id.PluginRef)
+		spec, err := ocm.ParseRef(pspec.PluginRef)
 		if err != nil {
 			return nil, errors.Wrapf(err, "cannot parse reference spec")
 		}
 		if spec.Component != "" {
-			if id.Component != "" || id.Version != "" {
+			if pspec.Component != "" || pspec.Version != "" {
 				return nil, fmt.Errorf("component and version not required for given component reference")
 			}
-			hid.Component = spec.Component
+			info.Id.Component = spec.Component
 			if spec.IsVersion() {
-				hid.Version = *spec.Version
+				info.Id.Version = *spec.Version
 			}
 
 		}
@@ -162,9 +265,9 @@ func (o *PluginCache) Get(id *buildfile.Plugin, dir string) (*Plugin, error) {
 		}
 	}
 
-	if id.Repository != nil {
+	if pspec.Repository != nil {
 		var raw interface{}
-		err := json.Unmarshal(*id.Repository, &raw)
+		err := json.Unmarshal(*pspec.Repository, &raw)
 		if err != nil {
 			return nil, errors.Wrapf(err, "cannot parse repository spec")
 		}
@@ -176,15 +279,15 @@ func (o *PluginCache) Get(id *buildfile.Plugin, dir string) (*Plugin, error) {
 					return nil, errors.Wrapf(err, "cannot parse repository spec")
 				}
 				if spec.Component != "" {
-					if id.Component != "" {
+					if pspec.Component != "" {
 						return nil, fmt.Errorf("component  not required for given component reference in repository field")
 					}
-					hid.Component = spec.Component
+					info.Id.Component = spec.Component
 					if spec.IsVersion() {
-						if id.Version != "" {
+						if pspec.Version != "" {
 							return nil, fmt.Errorf("version not required for given version reference in repository field")
 						}
-						hid.Version = *spec.Version
+						info.Id.Version = *spec.Version
 					}
 				}
 			} else {
@@ -198,32 +301,34 @@ func (o *PluginCache) Get(id *buildfile.Plugin, dir string) (*Plugin, error) {
 				return nil, errors.Wrapf(err, "invalid repository spec")
 			}
 		} else {
-			repospec, err = o.ctx.RepositorySpecForConfig(*id.Repository, nil)
+			repospec, err = o.ctx.RepositorySpecForConfig(*pspec.Repository, nil)
 			if err != nil {
 				return nil, errors.Wrapf(err, "invalid repository spec")
 			}
 		}
 	}
 
-	path := o.getPath(hid)
-	if ok, err := vfs.FileExists(osfs.OsFs, path); ok && err == nil {
-		return &Plugin{
-			path: path,
-			desc: hid.String(),
-		}, nil
+	if info.Id.IsComplete() {
+		path := o.getPath(&info.Id)
+		if ok, err := vfs.FileExists(osfs.OsFs, path); ok && err == nil {
+			// o.printer.Printf("resusing completely specified ref\n")
+			return o.add(&info, path), nil
+		}
 	}
 
+	// New resolution for plugin spec
 	sess := ocm.NewSession(nil)
+	defer sess.Close()
 
 	repo, err := sess.LookupRepository(o.ctx, repospec)
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot get repository")
 	}
 
-	return o.DownloadFromRepo(sess, repo, hid.Component, hid.Version, hid)
+	return o.DownloadFromRepo(sess, repo, info.Id.Component, info.Id.Version, &info)
 }
 
-func (o *PluginCache) DownloadFromRepo(session ocm.Session, repo ocm.Repository, comp, vers string, hid *hashId) (*Plugin, error) {
+func (o *PluginCache) DownloadFromRepo(session ocm.Session, repo ocm.Repository, comp, vers string, info *Info) (*Plugin, error) {
 	var cv ocm.ComponentVersionAccess
 
 	c, err := session.LookupComponent(repo, comp)
@@ -238,19 +343,19 @@ func (o *PluginCache) DownloadFromRepo(session ocm.Session, repo ocm.Repository,
 			if err != nil {
 				return nil, err
 			}
-			return o.download(session, cv, hid.Resource)
+			return o.download(session, cv, info.Id.Resource, info)
 		}
 		constraints, err := semver.NewConstraint(vers)
 		if err != nil {
 			return nil, errors.Wrapf(err, "invalid version or constraints")
 		}
-		return o.downloadLatest(session, c, constraints, hid.Resource)
+		return o.downloadLatest(session, c, constraints, info.Id.Resource, info)
 
 	}
-	return o.downloadLatest(session, c, anyVersion, hid.Resource)
+	return o.downloadLatest(session, c, anyVersion, info.Id.Resource, info)
 }
 
-func (o *PluginCache) downloadLatest(session ocm.Session, comp ocm.ComponentAccess, constraints *semver.Constraints, res string) (*Plugin, error) {
+func (o *PluginCache) downloadLatest(session ocm.Session, comp ocm.ComponentAccess, constraints *semver.Constraints, res string, info *Info) (*Plugin, error) {
 	var vers []string
 
 	vers, err := comp.ListVersions()
@@ -276,10 +381,10 @@ func (o *PluginCache) downloadLatest(session ocm.Session, comp ocm.ComponentAcce
 	if err != nil {
 		return nil, err
 	}
-	return o.download(session, cv, res)
+	return o.download(session, cv, res, info)
 }
 
-func (o *PluginCache) download(session ocm.Session, cv ocm.ComponentVersionAccess, name string) (p *Plugin, err error) {
+func (o *PluginCache) download(session ocm.Session, cv ocm.ComponentVersionAccess, name string, info *Info) (p *Plugin, err error) {
 	defer errors.PropagateErrorf(&err, nil, "%s", common.VersionedElementKey(cv))
 
 	var found ocm.ResourceAccess
@@ -315,23 +420,36 @@ func (o *PluginCache) download(session ocm.Session, cv ocm.ComponentVersionAcces
 		return nil, fmt.Errorf("no ocm build plugin found")
 	}
 
-	hid := &hashId{
+	hid := &HashId{
 		Component: cv.GetName(),
 		Version:   cv.GetVersion(),
 		Resource:  found.Meta().Name,
 	}
+
 	target := o.getPath(hid)
+	infofile := target + ".info"
 
 	fs := osfs.New()
 	if ok, _ := vfs.FileExists(fs, target); ok {
-		return &Plugin{
-			path: target,
-			desc: hid.String(),
-		}, nil
+		var info Info
+		d, err := os.ReadFile(infofile)
+		if err == nil {
+			err = json.Unmarshal(d, &info)
+			if err != nil {
+				return nil, err
+			}
+			if err == nil && info.Digest == found.Meta().Digest.Value {
+				return o.add(&info, target), nil
+			}
+		}
 	}
 
 	printer := o.printer.AddGap("    ")
-	printer.Printf("found build plugin resource %s[%s:%s]\n", name, cv.GetName(), cv.GetVersion())
+	d := ""
+	if found.Meta().Digest != nil {
+		d = "{" + found.Meta().Digest.Value + "}"
+	}
+	printer.Printf("found build plugin resource %s[%s:%s]%s\n", name, cv.GetName(), cv.GetVersion(), d)
 	file, err := os.CreateTemp(os.TempDir(), "plugin-*")
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot create temp file")
@@ -360,8 +478,18 @@ func (o *PluginCache) download(session ocm.Session, cv ocm.ComponentVersionAcces
 	if err != nil {
 		return nil, errors.Wrapf(err, "cannot copy plugin file %s", target)
 	}
-	return &Plugin{
-		path: target,
-		desc: hid.String(),
-	}, nil
+	if found.Meta().Digest != nil {
+		info.Digest = found.Meta().Digest.Value
+		d, err := json.Marshal(info)
+		if err != nil {
+			return nil, errors.Wrapf(err, "cannot marshal plugin info")
+		}
+		err = os.WriteFile(infofile, d, 0o644)
+		if err != nil {
+			return nil, errors.Wrapf(err, "cannot write plugin info file")
+		}
+	} else {
+		os.Remove(infofile)
+	}
+	return o.add(info, target), nil
 }

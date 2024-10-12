@@ -1,7 +1,9 @@
 
 schemaVersion: v1
 metadata:
-  some: metadata
+  platforms:
+    - linux/amd64
+    - darwin/arm64
 
 version: 0.1.0
 provider:
@@ -13,14 +15,31 @@ components:
 #      - executable: goplugin
       - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
         config:
-          paths:
-            - cmds/test/build/plugins/gobuild
+          path: cmds/test/build/plugins/gobuild
           resource:
            name: goexecutable
            type: ocm.software/buildplugin
-          platforms:
-            - linux/amd64
-            - darwin/arm64
+          platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/constructor
+    builds:
+      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+        config:
+          path: cmds/test/build/plugins/constructor
+          resource:
+            name: constructor
+            type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/dockerbuild
+    builds:
+      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+        config:
+          path: cmds/test/build/plugins/dockerbuild
+          resource:
+            name: constructor
+            type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
 #      - executable: testplugin
 #        config:
 #          constructor: test/constructor

@@ -1,0 +1,24 @@
+
+schemaVersion: v1
+metadata:
+  platforms:
+    - linux/amd64
+    - linux/arm64
+
+version: 0.1.0
+provider:
+  name: mandelsoft.org
+
+components:
+  - name: ocm.software/toi/helminstaller
+    builds:
+      - executable: dockerbuild
+#      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/dockerbuild
+        config:
+          dockerfile: ../../../../components/helminstaller/Dockerfile
+          contentRoot: ../../../..
+          resource:
+           name: dockerbuild
+           type: ocm.software/buildplugin
+           imageName: ocm.software/toi/helminstaller:((version))
+          platforms: (( metadata.platforms ))

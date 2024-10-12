@@ -9,8 +9,9 @@ import (
 )
 
 type Options struct {
-	Create bool
-	Force  bool
+	Create    bool
+	Force     bool
+	ReResolve bool
 
 	Archive   string
 	Format    ctf.FormatHandler

@@ -4,17 +4,51 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
 	clictx "ocm.software/ocm/api/cli"
 	"ocm.software/ocm/api/ocm/extensions/repositories/ctf"
 	utils "ocm.software/ocm/api/ocm/ocmutils"
+	"ocm.software/ocm/api/utils/template"
 	"ocm.software/ocm/cmds/test/build/build"
 )
 
 func main() {
-	if len(os.Args) > 3 {
-		fmt.Fprintf(os.Stderr, "usage: %s <archive> <buildfile>\n", os.Args[0])
+
+	var opts build.Options
+
+	cmd := &cobra.Command{
+		Use:   fmt.Sprintf("%s <archive> <buildfile>\n", os.Args[0]),
+		Short: "compose an OCM transport archive from building a project",
+		Long: "Described by a Buildfile, dome components are created ba executing arbitrary build steps\n" +
+			"providing the resources included into the component version.",
+		Example: "",
+		Args:    cobra.MaximumNArgs(1),
+		Version: "0.1.0",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return Run(cmd, args, &opts)
+		},
+	}
+
+	cmd.SetArgs(os.Args[1:])
+	fs := cmd.Flags()
+
+	fs.BoolVarP(&opts.ReResolve, "reresolve", "r", false, "reresolver plugin identities")
+	fs.BoolVarP(&opts.Create, "create", "c", false, "create transprt archive")
+	fs.BoolVarP(&opts.Force, "force", "f", false, "cleanup existing archive")
+	fs.StringVarP(&opts.Archive, "target", "t", "", "target archive")
+	fs.StringVarP(&opts.Version, "componentVersion", "V", "", "default version")
+	fs.StringVarP(&opts.GenDir, "gen", "g", "gen", "generation directory")
+	fs.StringVarP(&opts.PluginDir, "plugins", "p", "", "plugin di")
+
+	err := cmd.Execute()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: build failed: %s\n", os.Args[0], err.Error())
 		os.Exit(1)
 	}
+
+}
+
+func Run(cmd *cobra.Command, args []string, opts *build.Options) error {
 	ctx := clictx.New()
 
 	_, err := utils.Configure(ctx, "", nil)
@@ -22,24 +56,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s: configuration failed: %s\n", os.Args[0], err.Error())
 		os.Exit(1)
 	}
-	opts := build.Options{
-		Create:  true,
-		Format:  ctf.FormatDirectory,
-		Mode:    0o770,
-		Version: "1.0.0",
+	opts.Format = ctf.FormatDirectory
+	opts.Mode = 0o770
+	opts.Templater = template.Options{
+		Default: "spiff",
+		UseEnv:  false,
 	}
 
-	if len(os.Args) > 1 {
-		opts.Archive = os.Args[1]
+	if len(args) > 0 {
+		opts.BuildFile = args[0]
 	}
-	if len(os.Args) > 2 {
-		opts.BuildFile = os.Args[2]
-	}
-	err = build.Execute(ctx, opts)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s: build failed: %s\n", os.Args[0], err.Error())
-		os.Exit(1)
-	}
+	return build.Execute(ctx, *opts)
 }
 
 func mainOld() {

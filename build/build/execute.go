@@ -26,7 +26,7 @@ func Execute(ctx clictx.Context, opts Options) error {
 		return err
 	}
 
-	plugins, err := plugin.New(ctx.OCMContext(), opts.PluginDir, opts.Printer)
+	plugins, err := plugin.New(ctx.OCMContext(), opts.PluginDir, opts.Printer, opts.ReResolve)
 	if err != nil {
 		return err
 	}
