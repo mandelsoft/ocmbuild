@@ -109,7 +109,7 @@ func build(p *ppi.Plugin[Config], cfg *Config, platform string) (string, metav1.
 		return "", nil, err
 	}
 	args := append([]string{"build", "-o", target}, cfg.Options...)
-	path := cfg.Path
+	path := p.Path(cfg.Path)
 	if ok, err := vfs.Exists(osfs.OsFs, path); !ok || err != nil {
 		return "", nil, fmt.Errorf("path %q not found", path)
 	}

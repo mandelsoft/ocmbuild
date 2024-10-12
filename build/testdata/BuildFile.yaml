@@ -40,6 +40,16 @@ components:
             name: constructor
             type: ocm.software/buildplugin
           platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/execute
+    builds:
+      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+        config:
+          path: cmds/test/build/plugins/execute
+          resource:
+            name: constructor
+            type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
 #      - executable: testplugin
 #        config:
 #          constructor: test/constructor
