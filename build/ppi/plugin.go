@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/mandelsoft/vfs/pkg/osfs"
 	"github.com/mandelsoft/vfs/pkg/vfs"
@@ -19,14 +20,20 @@ type Handler[C any] interface {
 }
 
 type Plugin[C any] struct {
+	comp    bool
 	handler Handler[C]
 	config  C
 	printer common.Printer
 	env     state.Environment
+	usage   string
 }
 
-func NewPlugin[C any](h Handler[C]) *Plugin[C] {
-	return &Plugin[C]{handler: h, printer: common.StderrPrinter.AddGap("      ")}
+func NewPlugin[C any](h Handler[C], usage ...string) *Plugin[C] {
+	return &Plugin[C]{comp: true, handler: h, printer: common.StderrPrinter.AddGap("      "), usage: strings.Join(usage, "\n")}
+}
+
+func NewGenericPlugin[C any](h Handler[C], usage ...string) *Plugin[C] {
+	return &Plugin[C]{comp: false, handler: h, printer: common.StderrPrinter.AddGap("      "), usage: strings.Join(usage, "\n")}
 }
 
 func (p *Plugin[C]) Printer() common.Printer {
@@ -52,6 +59,23 @@ func (p *Plugin[C]) GenDir(path string) string {
 }
 
 func (p *Plugin[C]) Run(args []string) {
+	if len(args) > 1 && args[1] == "--help" {
+		ctx := `This build plugin is usable for both, sole build steps and component build
+steps.`
+		if p.comp {
+			ctx = `This build plugin is usable for component build steps, only.`
+		}
+		fmt.Fprintf(os.Stderr, `Usage: %s <env json> <index> <config>\n
+Stdin is used to pass the processing state, if index > 0. The index is the
+index of the component version entry in the component component constructor
+list. The modified state is taken from stdout. Stderr can be used to provide
+regular text output and error messages.
+%s
+The config is taken from the plugin config in the Buildfile and uses the
+following fields:
+%s
+`, args[0], ctx, p.usage)
+	}
 	if len(args) != 4 {
 		Error("usage: %s <env> <index> <config> (found %#v)", args[0], args)
 	}
@@ -75,7 +99,14 @@ func (p *Plugin[C]) Run(args []string) {
 	if len(pstate.Components) <= int(index) {
 		Error("index %d out of range", index)
 	}
-	ExitOnError(p.handler.Run(p, &pstate, pstate.Components[index]), "plugin failed")
+	if index < 0 {
+		if p.comp {
+			Error("plugin suitable to component build steps, only")
+		}
+		ExitOnError(p.handler.Run(p, &pstate, nil), "plugin failed")
+	} else {
+		ExitOnError(p.handler.Run(p, &pstate, pstate.Components[index]), "plugin failed")
+	}
 
 	data, err = json.Marshal(pstate)
 	ExitOnError(err, "cannot marshal state")

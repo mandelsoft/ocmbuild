@@ -13,6 +13,7 @@ type Descriptor struct {
 	Version    string        `json:"version,omitempty"`
 	Provider   *Provider     `json:"provider"`
 	Labels     metav1.Labels `json:"labels,omitempty"`
+	Builds     []Build       `json:"builds,omitempty"`
 	Components []Component   `json:"components"`
 }
 

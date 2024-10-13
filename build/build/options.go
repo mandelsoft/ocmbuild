@@ -26,6 +26,8 @@ type Options struct {
 	Printer   misc.Printer
 
 	Templater template.Options
+
+	Components []string
 }
 
 func (o *Options) Complete(ctx clictx.Context) error {
@@ -55,7 +57,7 @@ func (o *Options) Complete(ctx clictx.Context) error {
 		o.PluginDir = o.BuildDir + "/buildplugins"
 	}
 	if o.Archive == "" {
-		o.Archive = o.GenDir + "/ocm/build.ctf"
+		o.Archive = o.BuildDir + "/build.ctf"
 	}
 
 	if o.Printer == nil {

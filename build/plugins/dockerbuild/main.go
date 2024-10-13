@@ -30,7 +30,7 @@ import (
 )
 
 func main() {
-	ppi.NewPlugin[Config](&Handler{}).Run(os.Args)
+	ppi.NewPlugin[Config](&Handler{}, usage).Run(os.Args)
 }
 
 type Config struct {
@@ -49,6 +49,14 @@ type Resource struct {
 	ImageName     string          `json:"imageName,omitempty"`
 	Labels        metav1.Labels   `json:"labels,omitempty"`
 }
+
+const usage = `
+- name< (*string*) the (relative) the name for the OCM resource
+- type (*string*) the resource type
+- extraIdentity (*map[string]*) optional extra identity for the resource
+- imageName (*string*) the reference hint for the generated image
+- labels (*[]label*) arbitrary list of OCM labels
+`
 
 type Handler struct{}
 

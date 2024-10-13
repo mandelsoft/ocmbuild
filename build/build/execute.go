@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 
 	"github.com/mandelsoft/goutils/errors"
 	"github.com/mandelsoft/vfs/pkg/vfs"
@@ -20,15 +21,26 @@ import (
 	"ocm.software/ocm/cmds/test/build/state"
 )
 
-func Execute(ctx clictx.Context, opts Options) error {
+type Execution struct {
+	ctx     clictx.Context
+	opts    *Options
+	plugins *plugin.PluginCache
+	fs      vfs.FileSystem
+
+	dir       string
+	buildfile *buildfile.Descriptor
+	state     *state.Descriptor
+}
+
+func New(ctx clictx.Context, opts Options) (*Execution, error) {
 	err := opts.Complete(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	plugins, err := plugin.New(ctx.OCMContext(), opts.PluginDir, opts.Printer)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fs := vfsattr.Get(ctx)
@@ -36,57 +48,128 @@ func Execute(ctx clictx.Context, opts Options) error {
 
 	data, err := vfs.ReadFile(fs, opts.BuildFile)
 	if err != nil {
-		return errors.Wrapf(err, "cannot read build file")
+		return nil, errors.Wrapf(err, "cannot read build file")
 	}
 
 	d, err := opts.Templater.Templater.Process(string(data), opts.Templater.Vars)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	data = []byte(d)
-	var buildfile buildfile.Descriptor
+	var bd buildfile.Descriptor
 
-	err = runtime.DefaultYAMLEncoding.Unmarshal(data, &buildfile)
+	err = runtime.DefaultYAMLEncoding.Unmarshal(data, &bd)
 	if err != nil {
-		return errors.Wrapf(err, "cannot decode build file")
+		return nil, errors.Wrapf(err, "cannot decode build file")
 	}
 
-	pstate := state.New(&buildfile)
+	if bd.Version == "" {
+		bd.Version = opts.Version
+	}
 
-	opts.Printer.Printf("executing build....\n")
-	for n, c := range buildfile.Components {
-		res := pstate.AddComponent(&c)
-		opts.Printer.Printf("  building component %s...\n", misc.VersionedElementKey(res))
-		for i, b := range c.Builds {
-			p, err := plugins.Get(&b.Plugin, dir)
-			if err != nil {
-				return errors.Wrapf(err, "component %s, plugin %d", misc.VersionedElementKey(res), i)
-			}
-			hash := sha256.Sum256([]byte(fmt.Sprintf("%s::%d", p.Path(), i)))
-			gendir := vfs.Join(fs, opts.BuildDir, "steps", hex.EncodeToString(hash[:]))
-			env := &state.Environment{
-				Directory: dir,
-				GenDir:    gendir,
-			}
-			opts.Printer.Printf("    step %d[%s] in %s...\n", i, p.String(), gendir)
+	pstate := state.New(&bd)
 
-			nstate, err := ExecutePlugin(ctx, p.Path(), n, b.Config, pstate, env)
-			if err != nil {
-				return errors.Wrapf(err, "component %s, step %d", misc.VersionedElementKey(res), i)
+	execution := &Execution{
+		ctx:       ctx,
+		opts:      &opts,
+		plugins:   plugins,
+		fs:        fs,
+		dir:       dir,
+		buildfile: &bd,
+		state:     pstate,
+	}
+	return execution, nil
+}
+
+func Execute(ctx clictx.Context, opts Options) error {
+	e, err := New(ctx, opts)
+	if err != nil {
+		return err
+	}
+	return e.Run()
+}
+
+func (e *Execution) Run() error {
+	printer := e.opts.Printer
+	printer.Printf("executing build...\n")
+	printer = printer.AddGap("  ")
+
+	if len(e.buildfile.Builds) > 0 {
+		printer.Printf("executing build steps...\n")
+		err := e.ExecuteBuilds(printer.AddGap("  "), e.buildfile.Builds, -1, "")
+		if err != nil {
+			return err
+		}
+	}
+	if len(e.buildfile.Components) > 0 {
+		printer.Printf("executing component build steps...\n")
+		printer := printer.AddGap("  ")
+		n := 0
+		for _, c := range e.buildfile.Components {
+			if len(e.opts.Components) > 0 {
+				found := false
+				for _, t := range e.opts.Components {
+					i := strings.Index(t, ":")
+					if i < 0 {
+						found = t == c.Name
+					} else {
+						found = t[:i] == c.Name && (t[i+1:] == c.Version || (c.Version == "" && t[i+1:] == e.state.BuildFile.Version))
+					}
+					if found {
+						break
+					}
+				}
+				if !found {
+					continue
+				}
 			}
-			pstate = nstate
+			res := e.state.AddComponent(&c)
+			printer.Printf("building component %s...\n", misc.VersionedElementKey(res))
+			err := e.ExecuteBuilds(printer.AddGap("  "), c.Builds, n, fmt.Sprintf("component %s, ", misc.VersionedElementKey(res)))
+			if err != nil {
+				return err
+			}
+			n++
 		}
 	}
 
-	elem, err := NewSource(opts.BuildFile, pstate)
-	if err != nil {
-		return err
-	}
+	if len(e.state.Components) > 0 {
+		elem, err := NewSource(e.opts.BuildFile, e.state)
+		if err != nil {
+			return err
+		}
 
-	return Apply(ctx, opts, elem)
+		return Apply(e.ctx, *e.opts, elem)
+	} else {
+		e.opts.Printer.Printf("no components described -> skip update transport archive\n")
+		return nil
+	}
 }
 
-func ExecutePlugin(ctx clictx.Context, p string, index int, config json.RawMessage, pstate *state.Descriptor, env *state.Environment) (*state.Descriptor, error) {
+func (e *Execution) ExecuteBuilds(printer misc.Printer, builds []buildfile.Build, n int, ectx string) error {
+	for i, b := range builds {
+		p, err := e.plugins.Get(&b.Plugin, e.dir)
+		if err != nil {
+			return errors.Wrapf(err, "%sstep %d", ectx, i+1)
+		}
+		hash := sha256.Sum256([]byte(fmt.Sprintf("%s%s::%d", ectx, p.Path(), i)))
+		gendir := vfs.Join(e.fs, e.opts.BuildDir, "steps", hex.EncodeToString(hash[:]))
+		env := &state.Environment{
+			Directory: e.dir,
+			GenDir:    gendir,
+		}
+		printer.Printf("step %d[%s] in %s...\n", i+1, p.String(), gendir)
+
+		nstate, err := e.ExecutePlugin(p.Path(), n, b.Config, env)
+		if err != nil {
+			return errors.Wrapf(err, "%sstep %d", i+1)
+		}
+		e.state = nstate
+	}
+	return nil
+}
+
+func (e *Execution) ExecutePlugin(p string, index int, config json.RawMessage, env *state.Environment) (*state.Descriptor, error) {
 	envdata, err := json.Marshal(env)
 	if err != nil {
 		return nil, err
@@ -94,7 +177,7 @@ func ExecutePlugin(ctx clictx.Context, p string, index int, config json.RawMessa
 
 	cmd := exec.Command(p, string(envdata), strconv.Itoa(index), string(config))
 
-	data, err := json.Marshal(pstate)
+	data, err := json.Marshal(e.state)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +186,7 @@ func ExecutePlugin(ctx clictx.Context, p string, index int, config json.RawMessa
 
 	cmd.Stdin = bytes.NewBuffer(data)
 	cmd.Stdout = out
-	cmd.Stderr = ctx.StdOut()
+	cmd.Stderr = e.ctx.StdOut()
 
 	err = cmd.Run()
 	if err != nil {

@@ -12,9 +12,15 @@ import (
 	"ocm.software/ocm/cmds/test/build/build"
 )
 
+type Options struct {
+	build.Options
+	resolve bool
+	clean   bool
+}
+
 func main() {
 
-	var opts build.Options
+	var opts Options
 
 	cmd := &cobra.Command{
 		Use:   fmt.Sprintf("%s <archive> <buildfile>\n", os.Args[0]),
@@ -22,7 +28,6 @@ func main() {
 		Long: "Described by a Buildfile, dome components are created ba executing arbitrary build steps\n" +
 			"providing the resources included into the component version.",
 		Example: "",
-		Args:    cobra.MaximumNArgs(1),
 		Version: "0.1.0",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return Run(cmd, args, &opts)
@@ -39,6 +44,10 @@ func main() {
 	fs.StringVarP(&opts.Version, "componentVersion", "V", "", "default version")
 	fs.StringVarP(&opts.GenDir, "gen", "g", "gen", "generation directory")
 	fs.StringVarP(&opts.PluginDir, "plugins", "p", "", "plugin di")
+	fs.StringVarP(&opts.BuildFile, "buildfile", "b", "BuildFile.yaml", "build file")
+
+	fs.BoolVarP(&opts.resolve, "resolve", "", false, "resolve used build plugins")
+	fs.BoolVarP(&opts.clean, "clean", "", false, "clean build state")
 
 	err := cmd.Execute()
 	if err != nil {
@@ -48,7 +57,7 @@ func main() {
 
 }
 
-func Run(cmd *cobra.Command, args []string, opts *build.Options) error {
+func Run(cmd *cobra.Command, args []string, opts *Options) error {
 	ctx := clictx.New()
 
 	_, err := utils.Configure(ctx, "", nil)
@@ -64,9 +73,16 @@ func Run(cmd *cobra.Command, args []string, opts *build.Options) error {
 	}
 
 	if len(args) > 0 {
-		opts.BuildFile = args[0]
+		opts.Components = args
 	}
-	return build.Execute(ctx, *opts)
+
+	if opts.clean {
+		return build.Clean(ctx, opts.Options, !opts.resolve, true)
+	}
+	if opts.resolve {
+		return build.Resolve(ctx, opts.Options)
+	}
+	return build.Execute(ctx, opts.Options)
 }
 
 func mainOld() {

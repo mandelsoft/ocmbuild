@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	ppi.NewPlugin[Config](&Handler{}).Run(os.Args)
+	ppi.NewPlugin[Config](&Handler{}, usage).Run(os.Args)
 }
 
 type Config struct {
@@ -22,6 +22,15 @@ type Config struct {
 	Templater   string                 `json:"templater,omitempty"`
 	UseEnv      bool                   `json:"useEnv,omitempty"`
 }
+
+const usage = `
+- constructor< (*string*) the (relatice path to the constructor
+  file
+- values (*map*) arbitrary values passed to the templating of the
+  constructor file.
+- templater (*string*) the name of the templating engine to use
+- useEnv (*bool*) pass environment variables to the templating engine.
+`
 
 type Handler struct{}
 

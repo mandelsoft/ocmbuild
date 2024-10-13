@@ -9,13 +9,20 @@ version: 0.1.0
 provider:
   name: mandelsoft.org
 
+builds:
+  - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/execute
+    config:
+      cmd:
+        - go
+        - test
+        - gopkgpath: ../...
 components:
   - name: ocm.software/buildplugins/goexecutable
     builds:
 #      - executable: goplugin
       - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
         config:
-          path: cmds/test/build/plugins/gobuild
+          path: ../../../../cmds/test/build/plugins/gobuild
           resource:
            name: goexecutable
            type: ocm.software/buildplugin
@@ -25,7 +32,7 @@ components:
     builds:
       - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
         config:
-          path: cmds/test/build/plugins/constructor
+          path: ../../../../cmds/test/build/plugins/constructor
           resource:
             name: constructor
             type: ocm.software/buildplugin
@@ -35,7 +42,7 @@ components:
     builds:
       - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
         config:
-          path: cmds/test/build/plugins/dockerbuild
+          path: ../../../../cmds/test/build/plugins/dockerbuild
           resource:
             name: constructor
             type: ocm.software/buildplugin
@@ -45,7 +52,7 @@ components:
     builds:
       - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
         config:
-          path: cmds/test/build/plugins/execute
+          path: ../../../../cmds/test/build/plugins/execute
           resource:
             name: constructor
             type: ocm.software/buildplugin
