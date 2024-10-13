@@ -29,7 +29,7 @@ type Plugin[C any] struct {
 }
 
 func NewPlugin[C any](h Handler[C], usage ...string) *Plugin[C] {
-	return &Plugin[C]{comp: true, handler: h, printer: common.StderrPrinter.AddGap("      "), usage: strings.Join(usage, "\n")}
+	return &Plugin[C]{comp: true, handler: h, printer: common.StderrPrinter.AddGap("        "), usage: strings.Join(usage, "\n")}
 }
 
 func NewGenericPlugin[C any](h Handler[C], usage ...string) *Plugin[C] {

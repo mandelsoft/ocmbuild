@@ -71,7 +71,6 @@ func (h *Handler) Run(p *ppi.Plugin[Config], pstate *state.Descriptor, c *comp.R
 	if config.Resource.Name == "" {
 		return fmt.Errorf("resource name required")
 	}
-
 	platforms := config.Platforms
 	if len(config.Platforms) == 0 {
 		platforms = []string{runtime2.GOOS + "/" + runtime2.GOARCH}

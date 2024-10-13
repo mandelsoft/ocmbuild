@@ -1,4 +1,4 @@
-package plugin
+package plugincache
 
 import (
 	"crypto/sha256"

@@ -26,10 +26,10 @@ func (e *Execution) Clean(builds, cache bool) error {
 	}
 	if builds {
 		e.opts.Printer.Printf("cleaning archive %s...\n", e.opts.Archive)
-		// os.RemoveAll(e.opts.Archive)
+		os.RemoveAll(e.opts.Archive)
 		e.opts.Printer.Printf("cleaning generation dir %s...\n", e.opts.BuildDir)
 		if ok, err := vfs.DirExists(osfs.OsFs, e.opts.BuildDir); ok && err == nil {
-			// err = os.RemoveAll(e.opts.BuildDir)
+			err = os.RemoveAll(e.opts.BuildDir)
 		}
 	}
 	return err

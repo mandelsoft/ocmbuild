@@ -17,14 +17,14 @@ import (
 	"ocm.software/ocm/api/utils/misc"
 	"ocm.software/ocm/api/utils/runtime"
 	"ocm.software/ocm/cmds/test/build/buildfile"
-	"ocm.software/ocm/cmds/test/build/plugin"
+	"ocm.software/ocm/cmds/test/build/plugincache"
 	"ocm.software/ocm/cmds/test/build/state"
 )
 
 type Execution struct {
 	ctx     clictx.Context
 	opts    *Options
-	plugins *plugin.PluginCache
+	plugins *plugincache.PluginCache
 	fs      vfs.FileSystem
 
 	dir       string
@@ -38,7 +38,7 @@ func New(ctx clictx.Context, opts Options) (*Execution, error) {
 		return nil, err
 	}
 
-	plugins, err := plugin.New(ctx.OCMContext(), opts.PluginDir, opts.Printer)
+	plugins, err := plugincache.New(ctx.OCMContext(), opts.PluginDir, opts.Printer)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func (e *Execution) Run() error {
 			return err
 		}
 
-		return Apply(e.ctx, *e.opts, elem)
+		return e.Apply(elem)
 	} else {
 		e.opts.Printer.Printf("no components described -> skip update transport archive\n")
 		return nil
@@ -162,7 +162,7 @@ func (e *Execution) ExecuteBuilds(printer misc.Printer, builds []buildfile.Build
 
 		nstate, err := e.ExecutePlugin(p.Path(), n, b.Config, env)
 		if err != nil {
-			return errors.Wrapf(err, "%sstep %d", i+1)
+			return errors.Wrapf(err, "%sstep %d", ectx, i+1)
 		}
 		e.state = nstate
 	}

@@ -34,6 +34,10 @@ func Archive(ctx clictx.Context, opts *Options) (ocm.Repository, error) {
 			}
 			opts.Create = true
 		}
+	} else {
+		if opts.Force {
+			opts.Create = true
+		}
 	}
 
 	openmode := accessobj.ACC_WRITABLE
@@ -54,24 +58,29 @@ func Build(ctx clictx.Context, constructor string, opts Options) error {
 }
 
 func Apply(ctx clictx.Context, opts Options, elements ...addhdlrs.ElementSource) error {
+	e, err := New(ctx, opts)
+	if err != nil {
+		return err
+	}
+	return e.Apply(elements...)
+}
+
+func (e *Execution) Apply(elements ...addhdlrs.ElementSource) error {
 	session := ocm.NewSession(nil)
 	defer session.Close()
 
 	closure := true
 
-	fs := ctx.FileSystem()
-	err := opts.Complete(ctx)
-	if err != nil {
-		return err
-	}
-	h := comp.New(opts.Version, v3alpha1.SchemaVersion)
+	fs := e.ctx.FileSystem()
 
-	elems, ictx, err := ProcessDescriptions(ctx, h, &opts, elements...)
+	h := comp.New(e.opts.Version, v3alpha1.SchemaVersion)
+
+	elems, ictx, err := ProcessDescriptions(e.ctx, h, e.opts, elements...)
 	if err != nil {
 		return err
 	}
 
-	repo, err := Archive(ctx, &opts)
+	repo, err := Archive(e.ctx, e.opts)
 	if err != nil {
 		return err
 	}
@@ -82,15 +91,15 @@ func Apply(ctx clictx.Context, opts Options, elements ...addhdlrs.ElementSource)
 	}
 
 	if err == nil {
-		err = comp.ProcessComponents(ctx, ictx, repo, general.Conditional(closure, ctx.OCMContext().GetResolver(), nil), thdlr, h, elems)
+		err = comp.ProcessComponents(e.ctx, ictx, repo, general.Conditional(closure, e.ctx.OCMContext().GetResolver(), nil), thdlr, h, elems)
 		cerr := repo.Close()
 		if err == nil {
 			err = cerr
 		}
 	}
 	if err != nil {
-		if opts.Create {
-			fs.RemoveAll(opts.Archive)
+		if e.opts.Create {
+			fs.RemoveAll(e.opts.Archive)
 		}
 		return err
 	}

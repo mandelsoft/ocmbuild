@@ -8,6 +8,7 @@ import (
 	clictx "ocm.software/ocm/api/cli"
 	"ocm.software/ocm/api/ocm/extensions/repositories/ctf"
 	utils "ocm.software/ocm/api/ocm/ocmutils"
+	"ocm.software/ocm/api/ocm/plugin/registration"
 	"ocm.software/ocm/api/utils/template"
 	"ocm.software/ocm/cmds/test/build/build"
 )
@@ -40,7 +41,7 @@ func main() {
 	fs.BoolVarP(&opts.ReResolve, "reresolve", "r", false, "reresolver plugin identities")
 	fs.BoolVarP(&opts.Create, "create", "c", false, "create transprt archive")
 	fs.BoolVarP(&opts.Force, "force", "f", false, "cleanup existing archive")
-	fs.StringVarP(&opts.Archive, "target", "t", "", "target archive")
+	fs.StringVarP(&opts.Archive, "target", "o", "", "target archive")
 	fs.StringVarP(&opts.Version, "componentVersion", "V", "", "default version")
 	fs.StringVarP(&opts.GenDir, "gen", "g", "gen", "generation directory")
 	fs.StringVarP(&opts.PluginDir, "plugins", "p", "", "plugin di")
@@ -65,6 +66,7 @@ func Run(cmd *cobra.Command, args []string, opts *Options) error {
 		fmt.Fprintf(os.Stderr, "%s: configuration failed: %s\n", os.Args[0], err.Error())
 		os.Exit(1)
 	}
+	registration.RegisterExtensions(ctx)
 	opts.Format = ctf.FormatDirectory
 	opts.Mode = 0o770
 	opts.Templater = template.Options{
