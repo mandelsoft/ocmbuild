@@ -1,3 +1,0 @@
-#!/bin/bash -e
-
-go run "$(/usr/bin/dirname "$0")/../plugins/gobuild/main.go" "$@"

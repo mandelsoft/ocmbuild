@@ -1,0 +1,11 @@
+/gen
+/bin
+/.idea
+/tmp
+local
+*.sw[pqo]
+main
+ocm-build
+.vscode
+*.go.grc.bk
+go.mod.bak

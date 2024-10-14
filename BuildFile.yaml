@@ -1,0 +1,75 @@
+
+schemaVersion: v1
+metadata:
+  platforms:
+    - linux/amd64
+    - darwin/arm64
+
+version: (( exec("go", "run", "ocm.software/ocm/api/version/generate", "print-rc-version") ))
+provider:
+  name: mandelsoft.org
+
+builds:
+#  - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/execute
+  - executable: bootstrap/execute
+    config:
+      cmd:
+        - go
+        - test
+        - gopkgpath: .
+
+components:
+  - name: ocm.software/plugins/ocmbuild
+    builds:
+#      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: bootstrap/goexecutable
+        config:
+          path: ocmplugin
+          resource:
+            name: ocmbuild
+            type: ocmPlugin
+          platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/goexecutable
+    builds:
+#      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: bootstrap/goexecutable
+        config:
+          path: plugins/gobuild
+          resource:
+           name: goexecutable
+           type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/constructor
+    builds:
+#      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: bootstrap/goexecutable
+        config:
+          path: plugins/constructor
+          resource:
+            name: constructor
+            type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/dockerbuild
+    builds:
+#      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: bootstrap/goexecutable
+        config:
+          path: plugins/dockerbuild
+          resource:
+            name: dockerbuild
+            type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/execute
+    builds:
+#      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: bootstrap/goexecutable
+        config:
+          path: plugins/execute
+          resource:
+            name: execute
+            type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
