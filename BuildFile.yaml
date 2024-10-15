@@ -1,6 +1,21 @@
 
 schemaVersion: v1
 metadata:
+  # bootstrap defines a substitution of the used build plugins
+  # by directly running them from the sources contained in
+  # this project
+  bootstrap:
+    # plugin to execute some cpmmand
+    execute:
+      - go
+      - run
+      - gopkgpath: plugins/execute
+    # plugin to build an Go executable
+    goexecutable:
+      - go
+      - run
+      - gopkgpath: plugins/goexecutable
+
   platforms:
     - linux/amd64
     - darwin/arm64
@@ -11,7 +26,7 @@ provider:
 
 builds:
 #  - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/execute
-  - executable: bootstrap/execute
+  - executable: (( metadata.bootstrap.execute ))
     config:
       cmd:
         - go
@@ -22,7 +37,7 @@ components:
   - name: ocm.software/plugins/ocmbuild
     builds:
 #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
-      - executable: bootstrap/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
         config:
           path: ocmplugin
           resource:
@@ -33,9 +48,9 @@ components:
   - name: ocm.software/buildplugins/goexecutable
     builds:
 #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
-      - executable: bootstrap/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
         config:
-          path: plugins/gobuild
+          path: plugins/goexecutable
           resource:
            name: goexecutable
            type: ocm.software/buildplugin
@@ -44,7 +59,7 @@ components:
   - name: ocm.software/buildplugins/constructor
     builds:
 #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
-      - executable: bootstrap/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
         config:
           path: plugins/constructor
           resource:
@@ -55,7 +70,7 @@ components:
   - name: ocm.software/buildplugins/dockerbuild
     builds:
 #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
-      - executable: bootstrap/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
         config:
           path: plugins/dockerbuild
           resource:
@@ -66,7 +81,7 @@ components:
   - name: ocm.software/buildplugins/execute
     builds:
 #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
-      - executable: bootstrap/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
         config:
           path: plugins/execute
           resource:

@@ -7,12 +7,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/mandelsoft/filepath/pkg/filepath"
 	"github.com/mandelsoft/goutils/errors"
 	"github.com/mandelsoft/ocm-build/ppi"
-	"github.com/mandelsoft/vfs/pkg/osfs"
-	"github.com/mandelsoft/vfs/pkg/vfs"
-	"ocm.software/ocm/api/utils/runtime"
+	utils2 "github.com/mandelsoft/ocm-build/utils"
 	"ocm.software/ocm/cmds/ocm/commands/ocmcmds/common/addhdlrs/comp"
 
 	"github.com/mandelsoft/ocm-build/state"
@@ -23,12 +20,7 @@ func main() {
 }
 
 type Config struct {
-	Cmd []json.RawMessage `json:"cmd,omitempty"`
-}
-
-type Arg struct {
-	Path          string `json:"path,omitempty"`
-	GoPackagePath string `json:"gopkgpath,omitempty"`
+	Cmd json.RawMessage `json:"cmd,omitempty"`
 }
 
 const usage = `
@@ -39,6 +31,11 @@ arg can be a simple string or a qualified arg:
 - gopkgpath: <path> a Go package filesystem path. If relative
   it will automatically prefixed with a ./
 `
+
+type Arg struct {
+	Path          string `json:"path,omitempty"`
+	GoPackagePath string `json:"gopkgpath,omitempty"`
+}
 
 type Handler struct{}
 
@@ -55,38 +52,9 @@ func (h *Handler) Run(p *ppi.Plugin[Config], _ *state.Descriptor, _ *comp.Resour
 }
 
 func build(p *ppi.Plugin[Config], cfg *Config) error {
-	var args []string
-	for i, a := range cfg.Cmd {
-		var simple string
-
-		err := runtime.DefaultYAMLEncoding.Unmarshal(a, &simple)
-		if err == nil {
-			args = append(args, simple)
-		} else {
-			var arg Arg
-			err := runtime.DefaultYAMLEncoding.Unmarshal(a, &arg)
-			if err != nil {
-				return errors.Wrapf(err, "invalid argument spec %d", i)
-			}
-			if arg.GoPackagePath == "" && arg.Path == "" {
-				return errors.Newf("invalid argument spec %d: path or gopkgpath must be set", i)
-			}
-			if arg.GoPackagePath != "" && arg.Path != "" {
-				return errors.Newf("invalid argument spec %d: either path or gopkgpath must be set", i)
-			}
-			if arg.Path != "" {
-				args = append(args, p.Path(arg.Path))
-			} else {
-				path := p.Path(arg.GoPackagePath)
-				if !filepath.IsAbs(path) {
-					_, c := vfs.Components(osfs.OsFs, path)
-					if c[0] != "." {
-						path = strings.Join(append([]string{"."}, c...), string(os.PathSeparator))
-					}
-				}
-				args = append(args, path)
-			}
-		}
+	args, err := utils2.Args(p, cfg.Cmd)
+	if err != nil {
+		return err
 	}
 
 	cmd := exec.Command(args[0], args[1:]...)
@@ -94,7 +62,7 @@ func build(p *ppi.Plugin[Config], cfg *Config) error {
 	cmd.Stderr = os.Stderr
 
 	p.Printer().Printf("%s\n", strings.Join(args, " "))
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		return errors.Wrapf(err, "execution failed")
 	}

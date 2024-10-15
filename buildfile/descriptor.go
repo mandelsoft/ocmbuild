@@ -48,5 +48,5 @@ type Plugin struct {
 	Component  string           `json:"component,omitempty"`
 	Version    string           `json:"version,omitempty"`
 	Resource   string           `json:"resource,omitempty"`
-	Executable string           `json:"executable,omitempty"`
+	Executable *json.RawMessage `json:"executable,omitempty"`
 }

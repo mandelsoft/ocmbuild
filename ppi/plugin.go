@@ -46,10 +46,7 @@ func (p *Plugin[C]) Config() *C {
 }
 
 func (p *Plugin[C]) Path(path string) string {
-	if vfs.IsAbs(osfs.OsFs, path) {
-		return path
-	}
-	return vfs.Join(osfs.OsFs, p.env.Directory, path)
+	return p.env.Path(path)
 }
 
 func (p *Plugin[C]) GenDir(path string) string {

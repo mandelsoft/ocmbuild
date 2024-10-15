@@ -155,13 +155,10 @@ func (e *Execution) ExecuteBuilds(printer misc.Printer, builds []buildfile.Build
 		}
 		hash := sha256.Sum256([]byte(fmt.Sprintf("%s%s::%d", ectx, p.Path(), i)))
 		gendir := vfs.Join(e.fs, e.opts.BuildDir, "steps", hex.EncodeToString(hash[:]))
-		env := &state.Environment{
-			Directory: e.dir,
-			GenDir:    gendir,
-		}
+		env := state.NewEnvironment(e.dir, gendir)
 		printer.Printf("step %d[%s] in %s...\n", i+1, p.String(), gendir)
 
-		nstate, err := e.ExecutePlugin(p.Path(), n, b.Config, env)
+		nstate, err := e.ExecutePlugin(p, n, b.Config, env)
 		if err != nil {
 			return errors.Wrapf(err, "%sstep %d", ectx, i+1)
 		}
@@ -170,13 +167,13 @@ func (e *Execution) ExecuteBuilds(printer misc.Printer, builds []buildfile.Build
 	return nil
 }
 
-func (e *Execution) ExecutePlugin(p string, index int, config json.RawMessage, env *state.Environment) (*state.Descriptor, error) {
+func (e *Execution) ExecutePlugin(p *plugincache.Plugin, index int, config json.RawMessage, env *state.Environment) (*state.Descriptor, error) {
 	envdata, err := json.Marshal(env)
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := exec.Command(p, string(envdata), strconv.Itoa(index), string(config))
+	cmd := exec.Command(p.Path(), p.Args(string(envdata), strconv.Itoa(index), string(config))...)
 
 	data, err := json.Marshal(e.state)
 	if err != nil {

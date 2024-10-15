@@ -17,10 +17,11 @@ This content can then be transferred to a repository landscape.
 ## Provided build plugins
 
 In addition to the framework,some build plugins are provided
-- building a Go executable 
+- building a Go executable (`ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable`)
 - building a single/multiarch OCI images based on a Dockerfile and `docker`
-- describing any other resources with a constructor file similar to the `cm add cv` command.
-- executing some command line.
+  (`ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/dockerbuild`)
+- describing any other resources with a constructor file similar to the `cm add cv` command  (`ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/constructor`)
+- executing some command line (`ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/execute`)
 
 ## Example
 
@@ -28,9 +29,23 @@ This project is built by itself. This is achieved by using build plugin executab
 for the build steps. They are built on-the flay directly for their execution.
 
 ```yaml
-
 schemaVersion: v1
 metadata:
+  # bootstrap defines a substitution of the used build plugins
+  # by directly running them from the sources contained in
+  # this project
+  bootstrap:
+    # plugin to execute some cpmmand
+    execute:
+      - go
+      - run
+      - gopkgpath: plugins/execute
+    # plugin to build an Go executable
+    goexecutable:
+      - go
+      - run
+      - gopkgpath: plugins/goexecutable
+
   platforms:
     - linux/amd64
     - darwin/arm64
@@ -40,8 +55,8 @@ provider:
   name: mandelsoft.org
 
 builds:
-#  - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/execute
-  - executable: bootstrap/execute
+  #  - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/execute
+  - executable: (( metadata.bootstrap.execute ))
     config:
       cmd:
         - go
@@ -51,8 +66,8 @@ builds:
 components:
   - name: ocm.software/plugins/ocmbuild
     builds:
-#      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
-      - executable: bootstrap/goexecutable
+      #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
         config:
           path: ocmplugin
           resource:
@@ -62,13 +77,46 @@ components:
 
   - name: ocm.software/buildplugins/goexecutable
     builds:
-#      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
-      - executable: bootstrap/goexecutable
+      #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
         config:
-          path: plugins/gobuild
+          path: plugins/goexecutable
           resource:
-           name: goexecutable
-           type: ocm.software/buildplugin
+            name: goexecutable
+            type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/constructor
+    builds:
+      #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
+        config:
+          path: plugins/constructor
+          resource:
+            name: constructor
+            type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/dockerbuild
+    builds:
+      #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
+        config:
+          path: plugins/dockerbuild
+          resource:
+            name: dockerbuild
+            type: ocm.software/buildplugin
+          platforms: (( metadata.platforms ))
+
+  - name: ocm.software/buildplugins/execute
+    builds:
+      #      - pluginRef: ghcr.io/mandelsoft/ocmtest//ocm.software/buildplugins/goexecutable
+      - executable: (( metadata.bootstrap.goexecutable ))
+        config:
+          path: plugins/execute
+          resource:
+            name: execute
+            type: ocm.software/buildplugin
           platforms: (( metadata.platforms ))
 ```
 

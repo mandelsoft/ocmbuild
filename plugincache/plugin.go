@@ -16,6 +16,7 @@ import (
 	"github.com/mandelsoft/filepath/pkg/filepath"
 	"github.com/mandelsoft/goutils/errors"
 	"github.com/mandelsoft/goutils/general"
+	utils2 "github.com/mandelsoft/ocm-build/utils"
 	"github.com/mandelsoft/vfs/pkg/osfs"
 	"github.com/mandelsoft/vfs/pkg/vfs"
 	"ocm.software/ocm/api/ocm"
@@ -58,14 +59,19 @@ type Info struct {
 }
 
 type Plugin struct {
-	path string
-	desc string
+	path     string
+	baseargs []string
+	desc     string
 
 	info Info
 }
 
 func (p *Plugin) Path() string {
 	return p.path
+}
+
+func (p *Plugin) Args(args ...string) []string {
+	return append(append([]string{}, p.baseargs...), args...)
 }
 
 func (p *Plugin) String() string {
@@ -163,7 +169,9 @@ func (o *PluginCache) add(info *Info, path string) *Plugin {
 }
 
 func (o *PluginCache) Get(pspec *buildfile.Plugin, dir string) (*Plugin, error) {
-	if pspec.Executable != "" {
+	base := &utils2.BasePath{dir}
+
+	if pspec.Executable != nil {
 		if pspec.PluginRef != "" {
 			return nil, fmt.Errorf("for an execuable no reference required")
 		}
@@ -179,13 +187,15 @@ func (o *PluginCache) Get(pspec *buildfile.Plugin, dir string) (*Plugin, error) 
 		if pspec.Resource != "" {
 			return nil, fmt.Errorf("for an execuable no resource required")
 		}
-		path := pspec.Executable
-		if !vfs.IsAbs(osfs.OsFs, pspec.Executable) {
-			path = vfs.Join(osfs.OsFs, dir, path)
+
+		args, err := utils2.Args(base, *pspec.Executable)
+		if err != nil {
+			return nil, errors.Wrapf(err, "invalid executable")
 		}
 		return &Plugin{
-			path: path,
-			desc: "executable",
+			path:     args[0],
+			desc:     "executable",
+			baseargs: args[1:],
 		}, nil
 	}
 
